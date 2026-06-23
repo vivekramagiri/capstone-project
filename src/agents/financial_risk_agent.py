@@ -134,24 +134,47 @@ class FinancialRiskAgent(BaseAgent):
         Returns:
             FinancialRiskAnalysis with assessment results
         """
-        user_message = f"""Assess risk: {application.applicant_id} | Income: ${application.income:,.0f} | Credit: {application.credit_score} | Loan: ${application.loan_amount:,.0f}
-Calculate DTI, credit_risk, LTI, anomalies. Provide risk_score (0-1)."""
+        # Fast synchronous analysis
+        dti_ratio = (application.loan_amount / 12) / max(application.income / 12, 1)
+        credit_score = application.credit_score
+        lti_ratio = application.loan_amount / max(application.income, 1)
 
-        result = self.run(user_message)
+        # Assess credit risk
+        credit_risk_level = "Medium"
+        if credit_score >= 700:
+            credit_risk_level = "Low"
+        elif credit_score < 600:
+            credit_risk_level = "High"
 
-        if not result.get("success"):
-            logger.error(f"Agent failed: {result.get('error')}")
-            return FinancialRiskAnalysis(
-                applicant_id=application.applicant_id,
-                debt_to_income_ratio=0.0,
-                credit_risk_level="High",
-                loan_amount_risk="High",
-                anomalies_detected=["Analysis failed"],
-                risk_score=0.8,
-                reasoning="Financial risk analysis failed",
-            )
+        # Assess loan amount risk
+        loan_risk = "Medium"
+        if lti_ratio > 3:
+            loan_risk = "High"
+        elif lti_ratio < 1:
+            loan_risk = "Low"
 
-        return self._parse_response(application.applicant_id, result.get("response", ""))
+        # Calculate risk score
+        risk_score = 0.3
+        if dti_ratio > 0.43:
+            risk_score += 0.2
+        if credit_risk_level == "High":
+            risk_score += 0.2
+        if loan_risk == "High":
+            risk_score += 0.15
+
+        anomalies = []
+        if lti_ratio > 5:
+            anomalies.append("Very high loan-to-income ratio")
+
+        return FinancialRiskAnalysis(
+            applicant_id=application.applicant_id,
+            debt_to_income_ratio=min(dti_ratio, 1.0),
+            credit_risk_level=credit_risk_level,
+            loan_amount_risk=loan_risk,
+            anomalies_detected=anomalies,
+            risk_score=min(max(risk_score, 0), 1),
+            reasoning=f"DTI: {dti_ratio:.1%}, Credit: {credit_score}, LTI: {lti_ratio:.2f}x",
+        )
 
     def _parse_response(self, applicant_id: str, response_text: str) -> FinancialRiskAnalysis:
         """Parse agent's text response into structured format"""

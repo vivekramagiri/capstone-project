@@ -98,37 +98,43 @@ class LoanDecisionAgent(BaseAgent):
         Returns:
             LoanDecision with classification and reasoning
         """
+        # Fast synchronous decision logic
+        risk_score = risk_analysis.risk_score
+        employment_risk = profile_analysis.employment_risk
 
-        # Convert employment risk to score for synthesis
-        employment_risk_score_map = {"Low": 0.1, "Medium": 0.4, "High": 0.65, "Critical": 0.95}
-        employment_risk_score = employment_risk_score_map.get(profile_analysis.employment_risk, 0.5)
+        # Decision logic
+        classification = DecisionType.APPROVED
+        if employment_risk == "Critical" or risk_score > 0.7:
+            classification = DecisionType.REQUIRES_REVIEW
+        elif employment_risk == "High" or risk_score > 0.6:
+            classification = DecisionType.REQUIRES_REVIEW
+        elif risk_analysis.loan_amount_risk == "High" and risk_analysis.credit_risk_level == "High":
+            classification = DecisionType.REJECTED
 
-        # Convert credit risk level to score
-        credit_risk_score_map = {"Low": 0.15, "Medium": 0.5, "High": 0.8}
-        credit_risk_score = credit_risk_score_map.get(risk_analysis.credit_risk_level, 0.5)
+        # Confidence
+        confidence = 1.0 - (risk_score * 0.3)
 
-        # Calculate anomaly risk score from anomalies
-        anomaly_risk_score = len(risk_analysis.anomalies_detected) * 0.15
-        anomaly_risk_score = min(anomaly_risk_score, 0.9)
+        # Key factors
+        key_factors = [
+            f"Income Stability: {profile_analysis.income_stability_score:.0%}",
+            f"Employment: {profile_analysis.employment_risk}",
+            f"DTI Ratio: {risk_analysis.debt_to_income_ratio:.1%}",
+            f"Credit Risk: {risk_analysis.credit_risk_level}",
+        ]
 
-        user_message = f"""Decide: {application.applicant_id} | Stability: {profile_analysis.income_stability_score} | Emp: {profile_analysis.employment_risk} | DTI: {risk_analysis.debt_to_income_ratio:.1%} | Credit: {risk_analysis.credit_risk_level} | Risk: {risk_analysis.risk_score}
-Decision: APPROVED/REJECTED/REQUIRES MANUAL REVIEW. Provide confidence, factors."""
+        from datetime import datetime
+        import uuid
 
-        result = self.run(user_message)
-
-        if not result.get("success"):
-            logger.error(f"Agent failed: {result.get('error')}")
-            return LoanDecision(
-                applicant_id=application.applicant_id,
-                classification=DecisionType.REQUIRES_REVIEW,
-                risk_score=0.7,
-                confidence=0.5,
-                key_factors=["Decision agent failed"],
-                explanation="Decision analysis failed",
-                case_id=f"CASE-{application.applicant_id}-ERROR",
-            )
-
-        return self._parse_response(application.applicant_id, result.get("response", ""))
+        return LoanDecision(
+            applicant_id=application.applicant_id,
+            classification=classification,
+            risk_score=risk_score,
+            confidence=confidence,
+            key_factors=key_factors,
+            explanation=f"Decision: {classification.value}. Risk factors: {', '.join(key_factors[:2])}",
+            case_id=f"CASE-{uuid.uuid4().hex[:8].upper()}",
+            decision_timestamp=datetime.utcnow(),
+        )
 
     def _parse_response(self, applicant_id: str, response_text: str) -> LoanDecision:
         """Parse agent's text response into structured decision"""

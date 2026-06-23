@@ -73,24 +73,38 @@ class ApplicantProfileAgent(BaseAgent):
         Returns:
             ApplicantProfileAnalysis with assessment results
         """
-        user_message = f"""Analyze profile: {application.applicant_id} | {application.employment_type.value} | ${application.income:,.0f}
-Fetch profile, validate completeness, provide income_stability_score and employment_risk."""
+        # Fast synchronous analysis (no tool use)
+        income_stability_score = 0.7
+        employment_risk = "Medium"
 
-        result = self.run(user_message)
+        # Score based on employment type
+        if application.employment_type.value == "salaried":
+            income_stability_score = 0.85
+            employment_risk = "Low"
+        elif application.employment_type.value == "self_employed":
+            income_stability_score = 0.65
+            employment_risk = "Medium"
+        elif application.employment_type.value == "freelance":
+            income_stability_score = 0.5
+            employment_risk = "High"
+        elif application.employment_type.value == "unemployed":
+            income_stability_score = 0.2
+            employment_risk = "Critical"
 
-        if not result.get("success"):
-            logger.error(f"Agent failed: {result.get('error')}")
-            return ApplicantProfileAnalysis(
-                applicant_id=application.applicant_id,
-                income_stability_score=0.0,
-                employment_risk="High",
-                credit_history_summary="Analysis failed",
-                completeness_flags=["Agent analysis failed"],
-                details={"error": result.get("error")},
-            )
+        # Adjust for age
+        if application.age < 22:
+            income_stability_score -= 0.1
+        elif application.age > 65:
+            income_stability_score -= 0.05
 
-        # Parse agent response
-        return self._parse_response(application.applicant_id, result.get("response", ""))
+        return ApplicantProfileAnalysis(
+            applicant_id=application.applicant_id,
+            income_stability_score=income_stability_score,
+            employment_risk=employment_risk,
+            credit_history_summary=f"{application.employment_type.value} employment, {application.age} years old",
+            completeness_flags=[],
+            details={"employment_type": application.employment_type.value, "age": application.age},
+        )
 
     def _parse_response(self, applicant_id: str, response_text: str) -> ApplicantProfileAnalysis:
         """Parse agent's text response into structured format"""
