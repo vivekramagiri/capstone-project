@@ -9,8 +9,19 @@ from src.orchestration.state import ApplicationState
 from src.agents import applicant_profile_agent, financial_risk_agent, loan_decision_agent, compliance_agent
 from src.utils.logger import get_logger
 from src.utils.validators import validate_loan_application
+import hashlib
+import json
 
 logger = get_logger(__name__)
+
+# Simple cache for agent responses
+_response_cache = {}
+
+
+def _get_cache_key(agent_name: str, application_data: dict) -> str:
+    """Generate cache key for agent response"""
+    data_str = json.dumps(application_data, sort_keys=True, default=str)
+    return f"{agent_name}:{hashlib.md5(data_str.encode()).hexdigest()}"
 
 
 def validate_input(state: ApplicationState) -> ApplicationState:
@@ -41,11 +52,20 @@ def run_applicant_profile_agent(state: ApplicationState) -> ApplicationState:
         return state
 
     try:
-        agent = applicant_profile_agent.get_agent()
-        profile_analysis = agent.analyze(state["application"])
-        state["applicant_analysis"] = profile_analysis
+        app_dict = state["application"].model_dump()
+        cache_key = _get_cache_key("profile", app_dict)
+
+        if cache_key in _response_cache:
+            logger.info("✓ Profile analysis retrieved from cache")
+            state["applicant_analysis"] = _response_cache[cache_key]
+        else:
+            agent = applicant_profile_agent.get_agent()
+            profile_analysis = agent.analyze(state["application"])
+            _response_cache[cache_key] = profile_analysis
+            state["applicant_analysis"] = profile_analysis
+            logger.info(f"Profile analysis completed: {profile_analysis.employment_risk}")
+
         state["step_history"].append("applicant_profile_agent")
-        logger.info(f"Profile analysis completed: {profile_analysis.employment_risk}")
     except Exception as e:
         logger.error(f"Profile agent failed: {str(e)}")
         state["errors"].append(f"Profile analysis failed: {str(e)}")
@@ -63,11 +83,20 @@ def run_financial_risk_agent(state: ApplicationState) -> ApplicationState:
         return state
 
     try:
-        agent = financial_risk_agent.get_agent()
-        risk_analysis = agent.analyze(state["application"], state["applicant_analysis"])
-        state["risk_analysis"] = risk_analysis
+        app_dict = state["application"].model_dump()
+        cache_key = _get_cache_key("risk", app_dict)
+
+        if cache_key in _response_cache:
+            logger.info("✓ Risk analysis retrieved from cache")
+            state["risk_analysis"] = _response_cache[cache_key]
+        else:
+            agent = financial_risk_agent.get_agent()
+            risk_analysis = agent.analyze(state["application"], state["applicant_analysis"])
+            _response_cache[cache_key] = risk_analysis
+            state["risk_analysis"] = risk_analysis
+            logger.info(f"Risk analysis completed: risk_score={risk_analysis.risk_score}")
+
         state["step_history"].append("financial_risk_agent")
-        logger.info(f"Risk analysis completed: risk_score={risk_analysis.risk_score}")
     except Exception as e:
         logger.error(f"Risk agent failed: {str(e)}")
         state["errors"].append(f"Risk analysis failed: {str(e)}")
@@ -85,11 +114,20 @@ def run_decision_agent(state: ApplicationState) -> ApplicationState:
         return state
 
     try:
-        agent = loan_decision_agent.get_agent()
-        decision = agent.decide(state["application"], state["applicant_analysis"], state["risk_analysis"])
-        state["decision"] = decision
+        app_dict = state["application"].model_dump()
+        cache_key = _get_cache_key("decision", app_dict)
+
+        if cache_key in _response_cache:
+            logger.info("✓ Decision retrieved from cache")
+            state["decision"] = _response_cache[cache_key]
+        else:
+            agent = loan_decision_agent.get_agent()
+            decision = agent.decide(state["application"], state["applicant_analysis"], state["risk_analysis"])
+            _response_cache[cache_key] = decision
+            state["decision"] = decision
+            logger.info(f"Decision made: {decision.classification.value}")
+
         state["step_history"].append("loan_decision_agent")
-        logger.info(f"Decision made: {decision.classification.value}")
     except Exception as e:
         logger.error(f"Decision agent failed: {str(e)}")
         state["errors"].append(f"Decision analysis failed: {str(e)}")
@@ -134,7 +172,7 @@ def finalize(state: ApplicationState) -> ApplicationState:
 
 
 def build_workflow():
-    """Build the LangGraph workflow"""
+    """Build the LangGraph workflow with parallel execution where possible"""
     workflow = StateGraph(ApplicationState)
 
     # Add nodes
@@ -145,11 +183,18 @@ def build_workflow():
     workflow.add_node("compliance_agent", run_compliance_agent)
     workflow.add_node("finalize", finalize)
 
-    # Add edges (sequential workflow)
+    # Add edges with parallel execution
     workflow.add_edge(START, "validate_input")
+
+    # Profile and Risk agents run in parallel (no dependency between them)
     workflow.add_edge("validate_input", "applicant_profile_agent")
-    workflow.add_edge("applicant_profile_agent", "financial_risk_agent")
+    workflow.add_edge("validate_input", "financial_risk_agent")
+
+    # Both must complete before decision
+    workflow.add_edge("applicant_profile_agent", "loan_decision_agent")
     workflow.add_edge("financial_risk_agent", "loan_decision_agent")
+
+    # Decision → Compliance → Finalize
     workflow.add_edge("loan_decision_agent", "compliance_agent")
     workflow.add_edge("compliance_agent", "finalize")
     workflow.add_edge("finalize", END)

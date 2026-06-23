@@ -28,23 +28,8 @@ def generate_compliance_summary_tool(applicant_id: str, case_id: str, final_deci
     return notification_server.generate_compliance_summary(applicant_id, case_id, final_decision)
 
 
-SYSTEM_PROMPT = """You are a Compliance & Action Orchestrator Agent for a loan approval system.
-
-Your role is to:
-1. Log the final decision to the audit trail
-2. Send notifications to the applicant
-3. Generate compliance documentation
-4. Ensure all actions are properly recorded
-5. Maintain an audit trail for regulatory compliance
-
-When executing actions:
-- Log every significant event
-- Ensure notifications are sent with clear messaging
-- Create a compliance summary
-- Verify all actions were successful
-- Provide confirmation of completion
-
-Be thorough in documentation and ensure all compliance requirements are met."""
+SYSTEM_PROMPT = """Execute compliance actions: notify applicant, log case, generate summary.
+Use tools to complete all actions. Confirm success."""
 
 TOOLS_DEFINITION = [
     {
@@ -92,8 +77,8 @@ TOOLS_DEFINITION = [
 
 
 class ComplianceAgent(BaseAgent):
-    def __init__(self):
-        super().__init__("ComplianceAgent", SYSTEM_PROMPT)
+    def __init__(self, use_fast_model: bool = True):
+        super().__init__("ComplianceAgent", SYSTEM_PROMPT, use_fast_model=use_fast_model)
         self.add_tool(TOOLS_DEFINITION[0], send_notification_tool)
         self.add_tool(TOOLS_DEFINITION[1], log_case_action_tool)
         self.add_tool(TOOLS_DEFINITION[2], generate_compliance_summary_tool)
@@ -110,21 +95,8 @@ class ComplianceAgent(BaseAgent):
             ComplianceAction confirming all actions were taken
         """
 
-        user_message = f"""Complete all compliance actions for the following loan decision:
-
-Applicant ID: {applicant_id}
-Case ID: {decision.case_id}
-Decision: {decision.classification.value}
-Risk Score: {decision.risk_score}
-Key Factors: {', '.join(decision.key_factors[:3])}
-
-Please:
-1. Send a notification to the applicant with the decision
-2. Log the decision to the case audit trail
-3. Generate a compliance summary
-4. Confirm all actions were completed successfully
-
-Provide confirmation that all compliance requirements have been met."""
+        user_message = f"""Comply: {applicant_id} | {decision.case_id} | {decision.classification.value}
+Notify, log, summarize. Confirm complete."""
 
         result = self.run(user_message)
 

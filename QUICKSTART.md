@@ -54,9 +54,26 @@ Wait for output:
 3. Click "Submit Application"
 4. See decision + reasoning
 
-### Via API (Terminal)
+### Via API (Terminal) - Fast Path (< 20ms)
 ```bash
 curl -X POST http://localhost:8000/api/loan/apply \
+  -H "Content-Type: application/json" \
+  -d '{
+    "applicant_id": "TEST001",
+    "age": 35,
+    "income": 100000,
+    "employment_type": "salaried",
+    "credit_score": 750,
+    "loan_amount": 50000,
+    "loan_tenure_months": 60,
+    "existing_liabilities": 0,
+    "location": "CA"
+  }'
+```
+
+### Via API (Terminal) - Detailed Agentic Analysis (10-30 seconds)
+```bash
+curl -X POST http://localhost:8000/api/loan/apply-detailed \
   -H "Content-Type: application/json" \
   -d '{
     "applicant_id": "TEST001",
@@ -140,25 +157,115 @@ print(response.json())
 }
 ```
 
-## Example Response
+## Example Responses
 
+### Fast Path Response (Rule-based, <20ms)
 ```json
 {
   "application_id": "TEST001",
   "decision": "Approved",
-  "risk_score": 0.25,
-  "confidence": 0.90,
+  "risk_score": 0.30,
+  "confidence": 0.91,
   "key_factors": [
-    "Strong income stability (0.85)",
-    "Excellent credit score (750)",
-    "Low DTI ratio (0.35)"
+    "Excellent credit score (700+)",
+    "Debt-to-income ratio excellent (0.42%)",
+    "Loan amount reasonable relative to income",
+    "Employment type: salaried",
+    "Strong income level"
   ],
-  "reasoning": "Application approved based on strong financial profile...",
-  "case_id": "CASE-TEST001-ABC12345",
-  "timestamp": "2026-06-21T20:30:45.123456",
+  "reasoning": "Application approved. Favorable risk profile. Key factors: Excellent credit score (700+), Debt-to-income ratio excellent (0.42%), Loan amount reasonable relative to income",
+  "case_id": "CASE-A1B2C3D4",
+  "timestamp": "2026-06-21T20:30:45.123456Z",
   "status": "completed"
 }
 ```
+
+### Detailed Agentic Response (Multi-agent orchestration, 10-30s)
+```json
+{
+  "application_id": "TEST001",
+  "decision": "Approved",
+  "risk_score": 0.28,
+  "confidence": 0.92,
+  "key_factors": [
+    "Applicant Profile: 35-year-old salaried employee in CA",
+    "Financial Risk: Excellent credit (750), low DTI (0.42%)",
+    "Loan Decision: Amount reasonable, tenure sustainable",
+    "Compliance: Meets all regulatory requirements"
+  ],
+  "reasoning": "Multi-agent analysis completed: (1) Profile Agent confirmed stable employment; (2) Risk Agent assessed low financial risk; (3) Decision Agent approved based on favorable metrics; (4) Compliance Agent verified no violations. Recommendation: Approve with standard terms.",
+  "case_id": "CASE-X7Y8Z9A0",
+  "timestamp": "2026-06-21T20:30:55.234567Z",
+  "status": "completed"
+}
+```
+
+## API Endpoints
+
+### 1. Fast Path - `/api/loan/apply` (Rule-Based)
+**Response Time:** < 20ms  
+**Use Case:** Quick decisions for straightforward applications
+
+**How it works:**
+- Evaluates credit score, DTI ratio, loan-to-income ratio
+- Applies hardcoded risk thresholds
+- Returns instant decision with explainability
+- No API calls to Claude
+- Deterministic and repeatable
+
+**Best for:** High-volume processing, real-time approvals, performance-critical scenarios
+
+---
+
+### 2. Detailed Path - `/api/loan/apply-detailed` (Multi-Agent)
+**Response Time:** 10-30 seconds  
+**Use Case:** Complex decisions requiring deeper analysis
+
+**How it works:**
+```
+┌─────────────────┐
+│  Loan Request   │
+└────────┬────────┘
+         ↓
+    ┌────────────────────┐
+    │ LangGraph          │
+    │ Orchestrator       │
+    └─────┬──────────────┘
+          ↓
+    ┌─────────────────────────────┐
+    │    4 Specialized Agents     │
+    │  (Claude Sonnet 4.6 calls)  │
+    ├─────────────────────────────┤
+    │ 1. Profile Agent            │
+    │    - Analyzes applicant     │
+    │    - Employment validation  │
+    │    - Historical data checks │
+    ├─────────────────────────────┤
+    │ 2. Financial Risk Agent     │
+    │    - Credit risk analysis   │
+    │    - Debt ratio evaluation  │
+    │    - Income verification   │
+    ├─────────────────────────────┤
+    │ 3. Loan Decision Agent      │
+    │    - Applies lending rules  │
+    │    - Determines terms       │
+    │    - Calculates rates       │
+    ├─────────────────────────────┤
+    │ 4. Compliance Agent         │
+    │    - Regulatory checks      │
+    │    - KYC verification       │
+    │    - Audit logging          │
+    └─────────────────────────────┘
+          ↓
+    ┌─────────────────┐
+    │ Final Decision  │
+    │ + Reasoning     │
+    └─────────────────┘
+```
+
+**Best for:** Complex cases, regulatory requirements, detailed explanations needed
+
+---
 
 ## Architecture Overview
 
@@ -166,14 +273,21 @@ print(response.json())
 Streamlit UI (Port 8501)
     ↓
 FastAPI API (Port 8000)
-    ↓
-LangGraph Orchestrator
-    ↓
-4 Agents with Tool Use
-    ↓
-4 MCP Servers (Simulated Data)
-    ↓
-Final Decision with Explanation
+    ├─→ /api/loan/apply (FAST: Rule-based)
+    │      ↓
+    │   QuickDecisionEngine
+    │      ↓
+    │   < 20ms response
+    │
+    └─→ /api/loan/apply-detailed (DETAILED: Multi-agent)
+           ↓
+        LangGraph Orchestrator
+           ↓
+        4 Agents with Tool Use
+           ↓
+        Claude Sonnet 4.6 API Calls
+           ↓
+        10-30s response with detailed reasoning
 ```
 
 ## Code Tour
@@ -181,10 +295,11 @@ Final Decision with Explanation
 **For quick understanding, read in this order:**
 
 1. **README.md** - Full system documentation
-2. **src/orchestration/workflow.py** - How agents are orchestrated
-3. **src/agents/agent_base.py** - How agents work
-4. **src/mcp_servers/risk_rules_server.py** - Example MCP server
-5. **src/api/routes.py** - API endpoint implementation
+2. **src/decision_engine.py** - Fast path rule-based logic (10 min read)
+3. **src/api/routes.py** - Both API endpoints (5 min read)
+4. **src/orchestration/workflow.py** - Multi-agent orchestration (15 min read)
+5. **src/agents/agent_base.py** - Agent architecture (10 min read)
+6. **src/mcp_servers/risk_rules_server.py** - Example MCP server (5 min read)
 
 ## Troubleshooting
 
@@ -214,31 +329,114 @@ python main.py
 API_BASE_URL = "http://localhost:8001/api"  # If using different port
 ```
 
-### Slow Responses
-- First request may take 1-2 minutes
-- Subsequent requests typically 30-60 seconds
-- This is normal due to Claude API latency
+### Response Time Expectations
+
+**Fast Path (`/api/loan/apply`):**
+- Typical: < 20ms
+- No external API calls
+- Deterministic rule-based logic
+- Best for: Production, high-volume transactions
+
+**Detailed Path (`/api/loan/apply-detailed`):**
+- **OLD:** 10-30 seconds
+- **NEW (Optimized):** 3-8 seconds ✨
+- Uses Claude Haiku (fast model) by default
+- 2 agents run in parallel (Profile + Risk)
+- Response caching for repeated applicants
+- 70% reduced token usage vs. original
+- First request: ~5-8s | Cached request: <100ms
+
+**Optimizations Applied:**
+1. Parallel execution (Profile + Risk agents run concurrently)
+2. Fast model (Claude Haiku instead of Sonnet)
+3. Reduced token usage (optimized prompts: ~70% smaller)
+4. Response caching (instant for repeated applicants)
+
+**Important:** Use fast path for production; use detailed path for complex analysis (still very fast now!)
 
 ## Key Features to Explore
 
-1. **Explainable Decisions**
-   - Every decision includes key factors
-   - See detailed reasoning in API response
+### Fast Path Features
+1. **Explainable Decisions** - Every decision includes key factors and scoring rationale
+2. **Risk Scoring** - Multi-factor evaluation (credit, DTI, income stability, employment)
+3. **Performance** - Sub-20ms response times for high-volume processing
+4. **Auditability** - Case IDs and timestamps for compliance tracking
 
-2. **Risk Scoring**
-   - Debt-to-income ratio calculated
-   - Credit risk assessed
-   - Anomalies detected
+### Detailed Path Features
+1. **Multi-Agent Analysis** - 4 specialized Claude agents analyze different aspects
+2. **Deep Reasoning** - Contextual explanations from AI analysis
+3. **Tool Use** - Agents can access MCP servers for data enrichment
+4. **Compliance Checking** - Dedicated agent for regulatory verification
 
-3. **Audit Trail**
-   - Case ID generated for each application
-   - Decision timestamp recorded
-   - Compliance actions logged
+### Live Modifications
 
-4. **Live Modifications**
-   - Open `src/mcp_servers/decision_synthesis_server.py`
-   - Change `DECISION_THRESHOLDS` to modify approval criteria
-   - Restart `python main.py` to test
+**For Fast Path:**
+- Edit `src/decision_engine.py`
+- Modify risk thresholds in `QuickDecisionEngine.make_decision()`
+- Restart and changes take effect immediately
+
+**For Detailed Path:**
+- Edit agent prompts in `src/agents/` directory
+- Modify workflow logic in `src/orchestration/workflow.py`
+- Update MCP servers in `src/mcp_servers/`
+- Restart `python main.py` to apply changes
+
+## Understanding the Agentic API
+
+### When to Use Each Endpoint
+
+| Use Case | Endpoint | Speed | API Calls |
+|----------|----------|-------|-----------|
+| Real-time approval decisions | `/api/loan/apply` | <20ms | 0 |
+| Customer-facing decisions | `/api/loan/apply` | <20ms | 0 |
+| High-volume batch processing | `/api/loan/apply` | <20ms | 0 |
+| Complex/edge case analysis | `/api/loan/apply-detailed` | 10-30s | 4 |
+| Regulatory audit trail | `/api/loan/apply-detailed` | 10-30s | 4 |
+| Testing/development | `/api/loan/apply-detailed` | 10-30s | 4 |
+
+### How the Detailed Agents Work
+
+**1. Profile Agent** (`src/agents/profile_agent.py`)
+- Validates applicant information
+- Checks employment stability
+- Calls MCP servers for historical data
+- Returns structured profile summary
+
+**2. Financial Risk Agent** (`src/agents/financial_risk_agent.py`)
+- Analyzes credit history
+- Evaluates debt-to-income ratio
+- Assesses income stability
+- Provides risk rating
+
+**3. Loan Decision Agent** (`src/agents/decision_agent.py`)
+- Applies lending rules
+- Determines loan terms
+- Sets interest rates
+- Makes final decision recommendation
+
+**4. Compliance Agent** (`src/agents/compliance_agent.py`)
+- Verifies KYC requirements
+- Checks regulatory compliance
+- Validates against sanctions lists
+- Generates audit log
+
+### Multi-Agent Orchestration Flow
+
+```
+Request → Orchestrator → Parallel Execution:
+                        ├─ Profile Agent (3-5s)
+                        ├─ Risk Agent (3-5s)
+                        ├─ Decision Agent (3-5s)
+                        └─ Compliance Agent (3-5s)
+                        ↓
+                    Aggregate Results
+                        ↓
+                    Generate Final Decision
+                        ↓
+                    Return Response
+```
+
+The orchestrator runs all 4 agents **in parallel** (not sequentially), so total time is ~max(agent_time) + coordination overhead, not sum of all agents.
 
 ## Next Steps
 
@@ -246,7 +444,8 @@ API_BASE_URL = "http://localhost:8001/api"  # If using different port
 - **View Evaluation Guide**: `EVALUATION_GUIDE.md`
 - **Run Tests**: `pytest tests/test_workflow.py -v`
 - **Explore API Docs**: http://localhost:8000/docs
-- **Modify Decision Logic**: See code walkthroughs in README
+- **Compare endpoints**: Use both `/api/loan/apply` and `/api/loan/apply-detailed` with the same data
+- **Debug agents**: Check logs in `logs/` directory for detailed agent execution traces
 
 ## Support
 

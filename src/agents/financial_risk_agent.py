@@ -42,23 +42,8 @@ def detect_anomalies_tool(
     )
 
 
-SYSTEM_PROMPT = """You are a Financial Risk Analysis Agent for a loan approval system.
-
-Your role is to:
-1. Calculate debt-to-income (DTI) ratio and assess acceptability
-2. Evaluate credit risk based on credit score and payment history
-3. Assess loan-to-income risk
-4. Detect anomalies and suspicious patterns
-5. Synthesize findings into a comprehensive risk assessment
-
-When analyzing applications:
-- Use the available tools to calculate each risk dimension
-- Interpret results against industry standards
-- Identify concerning patterns or red flags
-- Provide a holistic risk score (0-1) and detailed reasoning
-- Highlight which factors pose the highest risk
-
-Be precise with numbers and provide specific thresholds in your analysis."""
+SYSTEM_PROMPT = """Assess financial risk: DTI, credit risk, loan-to-income, anomalies.
+Use tools to calculate each dimension. Return risk_score (0-1), credit_risk_level, and key factors."""
 
 TOOLS_DEFINITION = [
     {
@@ -129,8 +114,8 @@ TOOLS_DEFINITION = [
 
 
 class FinancialRiskAgent(BaseAgent):
-    def __init__(self):
-        super().__init__("FinancialRiskAgent", SYSTEM_PROMPT)
+    def __init__(self, use_fast_model: bool = True):
+        super().__init__("FinancialRiskAgent", SYSTEM_PROMPT, use_fast_model=use_fast_model)
         self.add_tool(TOOLS_DEFINITION[0], calculate_dti_tool)
         self.add_tool(TOOLS_DEFINITION[1], assess_credit_risk_tool)
         self.add_tool(TOOLS_DEFINITION[2], evaluate_lti_tool)
@@ -149,23 +134,8 @@ class FinancialRiskAgent(BaseAgent):
         Returns:
             FinancialRiskAnalysis with assessment results
         """
-        user_message = f"""Perform a comprehensive financial risk analysis for:
-Applicant ID: {application.applicant_id}
-Annual Income: ${application.income:,.2f}
-Credit Score: {application.credit_score}
-Requested Loan Amount: ${application.loan_amount:,.2f}
-Existing Liabilities: ${application.existing_liabilities:,.2f}
-Employment Type: {application.employment_type.value}
-Income Stability Score: {profile_analysis.income_stability_score}
-
-Please:
-1. Calculate the debt-to-income ratio
-2. Assess credit risk based on the credit score
-3. Evaluate loan-to-income ratio appropriateness
-4. Detect any anomalies or red flags
-5. Provide an overall risk score and detailed reasoning
-
-Respond with specific numbers and clear risk assessment."""
+        user_message = f"""Assess risk: {application.applicant_id} | Income: ${application.income:,.0f} | Credit: {application.credit_score} | Loan: ${application.loan_amount:,.0f}
+Calculate DTI, credit_risk, LTI, anomalies. Provide risk_score (0-1)."""
 
         result = self.run(user_message)
 

@@ -12,9 +12,10 @@ logger = get_logger(__name__)
 
 
 class BaseAgent:
-    def __init__(self, name: str, system_prompt: str):
+    def __init__(self, name: str, system_prompt: str, use_fast_model: bool = False):
         self.name = name
         self.system_prompt = system_prompt
+        self.use_fast_model = use_fast_model
         self.client = Anthropic(api_key=settings.ANTHROPIC_API_KEY, base_url=settings.ANTHROPIC_API_URL)
         self.tools: List[ToolParam] = []
         self.tool_functions: Dict[str, Callable] = {}
@@ -53,12 +54,18 @@ class BaseAgent:
 
         logger.info(f"Agent {self.name} starting with message: {user_message[:100]}")
 
+        # Select model and token limits based on performance mode
+        model = settings.LLM_MODEL_FAST if self.use_fast_model else settings.LLM_MODEL
+        max_tokens = settings.LLM_MAX_TOKENS_FAST if self.use_fast_model else settings.LLM_MAX_TOKENS
+        model_label = "fast" if self.use_fast_model else "standard"
+        logger.info(f"Agent {self.name} using {model_label} model: {model}")
+
         while iteration < max_iterations:
             iteration += 1
 
             response = self.client.messages.create(
-                model=settings.LLM_MODEL,
-                max_tokens=settings.LLM_MAX_TOKENS,
+                model=model,
+                max_tokens=max_tokens,
                 system=self.system_prompt,
                 tools=self.tools if self.tools else None,
                 messages=messages,

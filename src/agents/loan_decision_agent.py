@@ -42,24 +42,8 @@ def synthesize_decision_tool(
     )
 
 
-SYSTEM_PROMPT = """You are a Loan Decision Agent for a loan approval system.
-
-Your role is to:
-1. Review applicant profile and financial risk analyses
-2. Synthesize all available information into a clear decision
-3. Justify the decision with specific factors and reasoning
-4. Provide a confidence score for the decision
-5. Identify key decision drivers
-
-When making decisions:
-- Carefully weigh all risk factors
-- Consider both positive and negative indicators
-- Apply consistent decision logic
-- Provide clear, auditable reasoning
-- Format your decision as: DECISION: [APPROVED/REJECTED/REQUIRES MANUAL REVIEW]
-- List the key factors that drove this decision
-
-Be thorough in your analysis and clear about the decision rationale."""
+SYSTEM_PROMPT = """Synthesize all analyses into a loan decision: APPROVED/REJECTED/REQUIRES MANUAL REVIEW.
+Provide: decision, confidence (0-1), risk_score, key_factors."""
 
 TOOLS_DEFINITION = [
     {
@@ -93,8 +77,8 @@ TOOLS_DEFINITION = [
 
 
 class LoanDecisionAgent(BaseAgent):
-    def __init__(self):
-        super().__init__("LoanDecisionAgent", SYSTEM_PROMPT)
+    def __init__(self, use_fast_model: bool = True):
+        super().__init__("LoanDecisionAgent", SYSTEM_PROMPT, use_fast_model=use_fast_model)
         self.add_tool(TOOLS_DEFINITION[0], synthesize_decision_tool)
 
     def decide(
@@ -127,26 +111,8 @@ class LoanDecisionAgent(BaseAgent):
         anomaly_risk_score = len(risk_analysis.anomalies_detected) * 0.15
         anomaly_risk_score = min(anomaly_risk_score, 0.9)
 
-        user_message = f"""Make a final lending decision for:
-Applicant ID: {application.applicant_id}
-Loan Amount: ${application.loan_amount:,.2f}
-
-Profile Analysis:
-- Income Stability: {profile_analysis.income_stability_score}
-- Employment Risk: {profile_analysis.employment_risk}
-
-Financial Risk Analysis:
-- DTI Ratio: {risk_analysis.debt_to_income_ratio:.2%}
-- Credit Risk Level: {risk_analysis.credit_risk_level}
-- Loan Amount Risk: {risk_analysis.loan_amount_risk}
-- Overall Risk Score: {risk_analysis.risk_score}
-- Anomalies: {', '.join(risk_analysis.anomalies_detected) if risk_analysis.anomalies_detected else 'None'}
-
-Provide your decision with:
-1. Clear decision: APPROVED, REJECTED, or REQUIRES MANUAL REVIEW
-2. Specific factors that led to this decision
-3. Confidence level in the decision (0-1)
-4. Any special considerations"""
+        user_message = f"""Decide: {application.applicant_id} | Stability: {profile_analysis.income_stability_score} | Emp: {profile_analysis.employment_risk} | DTI: {risk_analysis.debt_to_income_ratio:.1%} | Credit: {risk_analysis.credit_risk_level} | Risk: {risk_analysis.risk_score}
+Decision: APPROVED/REJECTED/REQUIRES MANUAL REVIEW. Provide confidence, factors."""
 
         result = self.run(user_message)
 

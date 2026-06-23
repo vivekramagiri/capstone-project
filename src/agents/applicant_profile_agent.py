@@ -22,22 +22,8 @@ def validate_completeness_tool(applicant_id: str) -> dict:
     return applicant_db_server.validate_application_completeness(applicant_id)
 
 
-SYSTEM_PROMPT = """You are an Applicant Profile Analysis Agent for a loan approval system.
-
-Your role is to:
-1. Retrieve and analyze applicant profile information
-2. Assess income stability and employment history
-3. Identify any data quality issues or missing information
-4. Provide clear reasoning for your assessments
-
-When analyzing applicants:
-- Use the available tools to fetch profile data
-- Consider employment type and years of employment as stability indicators
-- Review income history trends
-- Flag any missing fields or data quality concerns
-- Provide a clear income stability score (0-1) and employment risk level
-
-Be thorough in your analysis and provide detailed explanations for your assessments."""
+SYSTEM_PROMPT = """Analyze applicant profile: employment type, income stability, and data completeness.
+Use tools to fetch profile data. Return income_stability_score (0-1) and employment_risk (Low/Medium/High)."""
 
 TOOLS_DEFINITION = [
     {
@@ -72,8 +58,8 @@ TOOLS_DEFINITION = [
 
 
 class ApplicantProfileAgent(BaseAgent):
-    def __init__(self):
-        super().__init__("ApplicantProfileAgent", SYSTEM_PROMPT)
+    def __init__(self, use_fast_model: bool = True):
+        super().__init__("ApplicantProfileAgent", SYSTEM_PROMPT, use_fast_model=use_fast_model)
         self.add_tool(TOOLS_DEFINITION[0], get_applicant_profile_tool)
         self.add_tool(TOOLS_DEFINITION[1], validate_completeness_tool)
 
@@ -87,16 +73,8 @@ class ApplicantProfileAgent(BaseAgent):
         Returns:
             ApplicantProfileAnalysis with assessment results
         """
-        user_message = f"""Analyze the applicant profile for:
-Applicant ID: {application.applicant_id}
-Employment Type: {application.employment_type}
-Current Income: ${application.income:,.2f}
-
-Please:
-1. Fetch the applicant's profile from the database
-2. Validate that all required information is complete
-3. Provide a detailed analysis of income stability and employment risk
-4. Return your assessment with scores and reasoning"""
+        user_message = f"""Analyze profile: {application.applicant_id} | {application.employment_type.value} | ${application.income:,.0f}
+Fetch profile, validate completeness, provide income_stability_score and employment_risk."""
 
         result = self.run(user_message)
 

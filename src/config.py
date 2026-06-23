@@ -10,8 +10,10 @@ class Settings:
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     ANTHROPIC_API_URL: str = os.getenv("ANTHROPIC_API_URL", "https://api.anthropic.com")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "global.anthropic.claude-sonnet-4-6")
-    LLM_MAX_TOKENS: int = int(os.getenv("LLM_MAX_TOKENS", "4096"))
-    LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+    LLM_MODEL_FAST: str = os.getenv("LLM_MODEL_FAST", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
+    LLM_MAX_TOKENS: int = int(os.getenv("LLM_MAX_TOKENS", "2048"))
+    LLM_MAX_TOKENS_FAST: int = int(os.getenv("LLM_MAX_TOKENS_FAST", "1024"))
+    LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.5"))
 
     # FastAPI
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
