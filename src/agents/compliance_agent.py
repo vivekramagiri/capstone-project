@@ -1,0 +1,181 @@
+"""
+Compliance & Action Orchestrator Agent
+Handles notifications, audit logging, and final compliance actions
+"""
+
+import json
+from datetime import datetime
+from src.agents.agent_base import BaseAgent
+from src.schemas import LoanDecision, ComplianceAction
+from src.mcp_servers import notification_server
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+def send_notification_tool(applicant_id: str, decision: str, case_id: str, reason: str = "") -> dict:
+    """Wrapper to call NotificationSystem MCP server"""
+    return notification_server.send_notification(applicant_id, decision, case_id, reason)
+
+
+def log_case_action_tool(applicant_id: str, case_id: str, action: str, details: str = "") -> dict:
+    """Wrapper to call NotificationSystem MCP server"""
+    return notification_server.log_case_action(applicant_id, case_id, action, details)
+
+
+def generate_compliance_summary_tool(applicant_id: str, case_id: str, final_decision: str) -> dict:
+    """Wrapper to call NotificationSystem MCP server"""
+    return notification_server.generate_compliance_summary(applicant_id, case_id, final_decision)
+
+
+SYSTEM_PROMPT = """You are a Compliance & Action Orchestrator Agent for a loan approval system.
+
+Your role is to:
+1. Log the final decision to the audit trail
+2. Send notifications to the applicant
+3. Generate compliance documentation
+4. Ensure all actions are properly recorded
+5. Maintain an audit trail for regulatory compliance
+
+When executing actions:
+- Log every significant event
+- Ensure notifications are sent with clear messaging
+- Create a compliance summary
+- Verify all actions were successful
+- Provide confirmation of completion
+
+Be thorough in documentation and ensure all compliance requirements are met."""
+
+TOOLS_DEFINITION = [
+    {
+        "name": "send_notification",
+        "description": "Send a notification to the applicant about their loan decision",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "applicant_id": {"type": "string", "description": "Unique applicant identifier"},
+                "decision": {"type": "string", "description": "The loan decision (Approved, Rejected, or Requires Manual Review)"},
+                "case_id": {"type": "string", "description": "The case reference ID"},
+                "reason": {"type": "string", "description": "Brief reason for the decision"},
+            },
+            "required": ["applicant_id", "decision", "case_id"],
+        },
+    },
+    {
+        "name": "log_case_action",
+        "description": "Log an action to the case audit trail",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "applicant_id": {"type": "string", "description": "Unique applicant identifier"},
+                "case_id": {"type": "string", "description": "The case reference ID"},
+                "action": {"type": "string", "description": "The action taken (e.g., 'Decision Made', 'Notification Sent')"},
+                "details": {"type": "string", "description": "Additional details about the action"},
+            },
+            "required": ["applicant_id", "case_id", "action"],
+        },
+    },
+    {
+        "name": "generate_compliance_summary",
+        "description": "Generate a compliance summary for the loan application",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "applicant_id": {"type": "string", "description": "Unique applicant identifier"},
+                "case_id": {"type": "string", "description": "The case reference ID"},
+                "final_decision": {"type": "string", "description": "The final lending decision"},
+            },
+            "required": ["applicant_id", "case_id", "final_decision"],
+        },
+    },
+]
+
+
+class ComplianceAgent(BaseAgent):
+    def __init__(self):
+        super().__init__("ComplianceAgent", SYSTEM_PROMPT)
+        self.add_tool(TOOLS_DEFINITION[0], send_notification_tool)
+        self.add_tool(TOOLS_DEFINITION[1], log_case_action_tool)
+        self.add_tool(TOOLS_DEFINITION[2], generate_compliance_summary_tool)
+
+    def execute(self, applicant_id: str, decision: LoanDecision) -> ComplianceAction:
+        """
+        Execute compliance actions for a loan decision
+
+        Args:
+            applicant_id: Applicant identifier
+            decision: Final loan decision
+
+        Returns:
+            ComplianceAction confirming all actions were taken
+        """
+
+        user_message = f"""Complete all compliance actions for the following loan decision:
+
+Applicant ID: {applicant_id}
+Case ID: {decision.case_id}
+Decision: {decision.classification.value}
+Risk Score: {decision.risk_score}
+Key Factors: {', '.join(decision.key_factors[:3])}
+
+Please:
+1. Send a notification to the applicant with the decision
+2. Log the decision to the case audit trail
+3. Generate a compliance summary
+4. Confirm all actions were completed successfully
+
+Provide confirmation that all compliance requirements have been met."""
+
+        result = self.run(user_message)
+
+        if not result.get("success"):
+            logger.error(f"Agent failed: {result.get('error')}")
+            return ComplianceAction(
+                applicant_id=applicant_id,
+                case_id=decision.case_id,
+                action_taken="Compliance execution failed",
+                notification_sent=False,
+                audit_log="Compliance agent failed",
+                summary="Compliance actions could not be completed",
+            )
+
+        return self._parse_response(applicant_id, decision.case_id, decision.classification.value, result.get("response", ""))
+
+    def _parse_response(self, applicant_id: str, case_id: str, decision: str, response_text: str) -> ComplianceAction:
+        """Parse agent's response into compliance action"""
+
+        # Check if notification was sent
+        notification_sent = (
+            "notification" in response_text.lower() and "sent" in response_text.lower()
+        ) or "success" in response_text.lower()
+
+        # Determine actions taken
+        actions = []
+        if "logged" in response_text.lower() or "audit" in response_text.lower():
+            actions.append("Case logged to audit trail")
+        if "notif" in response_text.lower():
+            actions.append("Notification sent to applicant")
+        if "summary" in response_text.lower() or "compliance" in response_text.lower():
+            actions.append("Compliance summary generated")
+
+        action_taken = " | ".join(actions) if actions else "Compliance actions completed"
+
+        return ComplianceAction(
+            applicant_id=applicant_id,
+            case_id=case_id,
+            action_taken=action_taken,
+            notification_sent=notification_sent,
+            audit_log=response_text[:500],
+            summary=f"Decision {decision} processed and communicated to applicant",
+        )
+
+
+# Singleton instance
+_agent_instance = None
+
+
+def get_agent() -> ComplianceAgent:
+    global _agent_instance
+    if _agent_instance is None:
+        _agent_instance = ComplianceAgent()
+    return _agent_instance
