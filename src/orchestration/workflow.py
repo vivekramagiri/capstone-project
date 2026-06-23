@@ -172,7 +172,7 @@ def finalize(state: ApplicationState) -> ApplicationState:
 
 
 def build_workflow():
-    """Build the LangGraph workflow with parallel execution where possible"""
+    """Build the LangGraph workflow with sequential execution (LangGraph state merging limitation)"""
     workflow = StateGraph(ApplicationState)
 
     # Add nodes
@@ -183,18 +183,12 @@ def build_workflow():
     workflow.add_node("compliance_agent", run_compliance_agent)
     workflow.add_node("finalize", finalize)
 
-    # Add edges with parallel execution
+    # Sequential workflow (LangGraph requires proper state merging for parallel)
+    # Profile and Risk are optimized individually (fast model, reduced tokens)
     workflow.add_edge(START, "validate_input")
-
-    # Profile and Risk agents run in parallel (no dependency between them)
     workflow.add_edge("validate_input", "applicant_profile_agent")
-    workflow.add_edge("validate_input", "financial_risk_agent")
-
-    # Both must complete before decision
-    workflow.add_edge("applicant_profile_agent", "loan_decision_agent")
+    workflow.add_edge("applicant_profile_agent", "financial_risk_agent")
     workflow.add_edge("financial_risk_agent", "loan_decision_agent")
-
-    # Decision → Compliance → Finalize
     workflow.add_edge("loan_decision_agent", "compliance_agent")
     workflow.add_edge("compliance_agent", "finalize")
     workflow.add_edge("finalize", END)
