@@ -38,7 +38,7 @@ def start_fastapi_server():
         str(settings.API_PORT),
         "--reload",
         "--timeout-keep-alive",
-        "300",
+        "60",
     ]
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 

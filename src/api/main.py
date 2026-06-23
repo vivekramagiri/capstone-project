@@ -67,5 +67,5 @@ if __name__ == "__main__":
         host=settings.API_HOST,
         port=settings.API_PORT,
         log_level=settings.API_LOG_LEVEL.lower(),
-        timeout_keep_alive=300,
+        timeout_keep_alive=60,
     )
