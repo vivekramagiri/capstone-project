@@ -24,7 +24,7 @@ st.set_page_config(
 
 # API configuration
 API_BASE_URL = "http://localhost:8000/api"
-REQUEST_TIMEOUT = 60
+REQUEST_TIMEOUT = 300
 
 
 def get_decision_color(decision: str) -> str:
