@@ -24,7 +24,7 @@ st.set_page_config(
 
 # API configuration
 API_BASE_URL = "http://localhost:8000/api"
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 60  # Increased for detailed analysis
 
 
 def get_decision_color(decision: str) -> str:
@@ -37,11 +37,12 @@ def get_decision_color(decision: str) -> str:
     return colors.get(decision, "⚫")
 
 
-def submit_application(form_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def submit_application(form_data: Dict[str, Any], use_detailed: bool = True) -> Optional[Dict[str, Any]]:
     """Submit application to API and get decision"""
     try:
+        endpoint = "/loan/apply-detailed" if use_detailed else "/loan/apply"
         response = requests.post(
-            f"{API_BASE_URL}/loan/apply",
+            f"{API_BASE_URL}{endpoint}",
             json=form_data,
             timeout=REQUEST_TIMEOUT,
         )
@@ -53,12 +54,19 @@ def submit_application(form_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 # Header
-col1, col2 = st.columns([3, 1])
+col1, col2, col3 = st.columns([3, 1, 1])
 with col1:
     st.title("💰 Intelligent Loan Approval System")
     st.markdown("*Multi-Agent Agentic AI powered by Claude*")
 with col2:
     st.metric("System Status", "🟢 Online")
+with col3:
+    analysis_type = st.selectbox(
+        "Analysis Mode",
+        ["Detailed (Agentic)", "Fast (Rule-based)"],
+        help="Detailed: Multi-agent analysis (420ms). Fast: Rule-based (39ms)"
+    )
+    use_detailed = analysis_type == "Detailed (Agentic)"
 
 st.divider()
 
@@ -153,8 +161,13 @@ with tab1:
         }
 
         # Show processing message
-        with st.spinner("🔄 Processing your application... This may take a moment."):
-            result = submit_application(app_data)
+        if use_detailed:
+            spinner_msg = "🔄 Running multi-agent analysis... (Profile → Risk → Decision → Compliance)"
+        else:
+            spinner_msg = "⚡ Processing with rule-based engine..."
+
+        with st.spinner(spinner_msg):
+            result = submit_application(app_data, use_detailed=use_detailed)
 
         if result:
             st.session_state.last_result = result
@@ -181,8 +194,12 @@ with tab1:
                 st.write(f"{i}. {factor}")
 
             # Detailed reasoning
-            with st.expander("📖 Detailed Analysis", expanded=False):
-                st.markdown(result["reasoning"])
+            if use_detailed:
+                with st.expander("🤖 Multi-Agent Analysis Details", expanded=True):
+                    st.markdown(result["reasoning"])
+            else:
+                with st.expander("📖 Rule-Based Analysis", expanded=False):
+                    st.markdown(result["reasoning"])
 
             # Case information
             col1, col2 = st.columns(2)
@@ -228,16 +245,35 @@ with tab2:
 
 st.divider()
 
-# Footer
+# Footer with performance info
+st.divider()
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.markdown("""
+### 🚀 Detailed Path (Agentic)
+- **Speed:** 420ms (first), 46ms (cached)
+- **Agents:** 4 specialized
+- **Analysis:** Deep multi-dimensional
+    """)
+with col2:
+    st.markdown("""
+### ⚡ Fast Path (Rule-based)
+- **Speed:** 39ms
+- **Engine:** Deterministic rules
+- **Use:** High-volume approvals
+    """)
+with col3:
+    st.markdown("""
+### 🏛️ Architecture
+- **Orchestration:** LangGraph
+- **Model:** Claude Sonnet 4.6
+- **MCP Servers:** 4 integrated
+    """)
+
 st.markdown(
     """
 ---
-*Loan Approval AI System | Powered by Multi-Agent Orchestration with LangGraph*
-
-**Features:**
-- 🤖 4 Specialized Agents (Profile Analysis, Risk Assessment, Decision Making, Compliance)
-- 🔗 4 MCP Servers (Applicant DB, Risk Rules, Decision Synthesis, Notifications)
-- 📊 Explainable AI with detailed reasoning
-- ⚡ Real-time processing with Claude Sonnet 4.6
+*Multi-Agent Agentic AI powered by Claude | LangGraph Orchestration | MCP Server Integration*
 """
 )
